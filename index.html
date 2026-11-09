@@ -325,6 +325,12 @@ document.getElementById("step1-next").addEventListener("click", () => {
 });
 document.getElementById("step2-back").addEventListener("click", () => showStep(1));
 
+function buildMsg() {
+  const total = cart.reduce((a, i) => a + i.price * i.qty, 0);
+  const lines = cart.map(i => `- ${i.name} (Talle ${i.size}) x${i.qty}: ${fmt(i.price * i.qty)}`);
+  return `Hola! Quiero hacer este pedido en Alma Showroom:\n${lines.join("\n")}\nTotal: ${fmt(total)}\n\nDatos de envío:\nProvincia: ${entrega.prov}\nLocalidad: ${entrega.loc}\nDirección: ${entrega.dir}\nCódigo postal: ${entrega.cp}\nGmail: ${entrega.mail}`;
+}
+
 function finishOrder() {
   cart = []; saveCart(); renderCart();
   closeModal();
