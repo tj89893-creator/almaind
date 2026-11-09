@@ -330,6 +330,7 @@ function finishOrder() {
   closeModal();
 }
 
+const stepWa = document.getElementById("step2-wa");
 stepWa.addEventListener("click", () => {
   const msg = buildMsg() + "\n\n(Te envío la captura del comprobante en este chat)";
   window.location.href = `https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(msg)}`;
