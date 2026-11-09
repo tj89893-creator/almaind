@@ -1,12 +1,11 @@
 module.exports = async (req, res) => {
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Método no permitido" });
-  }
+  if (req.method !== "POST") return res.status(405).json({ error: "Método no permitido" });
 
   const { items, envio, siteUrl } = req.body || {};
-  if (!items || !items.length) {
-    return res.status(400).json({ error: "El carrito está vacío" });
-  }
+  if (!items || !items.length) return res.status(400).json({ error: "El carrito está vacío" });
+
+  const pedido = items.map(i => `${i.name} (Talle ${i.size}) x${i.qty}`).join(" | ");
+  const total = items.reduce((a, i) => a + Number(i.price) * Number(i.qty), 0);
 
   const r = await fetch("https://api.mercadopago.com/checkout/preferences", {
     method: "POST",
@@ -21,8 +20,9 @@ module.exports = async (req, res) => {
         unit_price: Number(i.price),
         currency_id: "ARS",
       })),
-      payer: { name: envio?.nombre || "Cliente" },
-      metadata: envio,
+      payer: { email: envio.email },
+      metadata: { ...envio, pedido, total },
+      notification_url: `${siteUrl}/api/webhook`,
       back_urls: { success: siteUrl, failure: siteUrl, pending: siteUrl },
       auto_return: "approved",
     }),
