@@ -70,6 +70,10 @@ nav a{padding:4px 2px}
 .modal-box input{font:inherit;padding:9px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text)}
 .modal-actions{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap}
 .error{color:#c0392b;margin:0;font-size:.9rem}
+.upload{display:block;border:1px dashed var(--accent);border-radius:10px;padding:14px;text-align:center;cursor:pointer;color:var(--text);background:var(--bg)}
+.upload input{display:block;margin:8px auto 0;max-width:100%}
+#comp-preview{display:block;max-width:100%;max-height:220px;margin:0 auto;border-radius:8px}
+button:disabled{opacity:.45;cursor:not-allowed}
 </style>
 </head>
 <body>
@@ -113,7 +117,7 @@ nav a{padding:4px 2px}
       <div id="cart-items"></div>
       <div class="total"><span>Total</span><strong id="cart-total">$0</strong></div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
-        <button id="send-btn" type="button" class="btn btn-primary">Enviar pedido por WhatsApp</button>
+        <button id="send-btn" type="button" class="btn btn-primary">Pagar pedido</button>
         <button id="clear-btn" type="button">Vaciar carrito</button>
       </div>
     </div>
@@ -132,15 +136,34 @@ nav a{padding:4px 2px}
 
 <div id="modal" class="modal" hidden>
   <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-    <h3 id="modal-title">Datos de envío</h3>
-    <label>Provincia<input id="f-prov" autocomplete="address-level1"></label>
-    <label>Localidad<input id="f-loc" autocomplete="address-level2"></label>
-    <label>Dirección (calle y número)<input id="f-dir" autocomplete="street-address"></label>
-    <label>Código postal<input id="f-cp" autocomplete="postal-code" inputmode="numeric"></label>
-    <p id="form-error" class="error" hidden>Completá todos los campos para continuar.</p>
-    <div class="modal-actions">
-      <button type="button" id="modal-cancel">Cancelar</button>
-      <button type="button" id="modal-go" class="btn-primary">Enviar por WhatsApp</button>
+    <div id="step-entrega">
+      <h3 id="modal-title">1. Datos de entrega</h3>
+      <label>Provincia<input id="f-prov" autocomplete="address-level1"></label>
+      <label>Localidad<input id="f-loc" autocomplete="address-level2"></label>
+      <label>Dirección (calle y número)<input id="f-dir" autocomplete="street-address"></label>
+      <label>Código postal<input id="f-cp" autocomplete="postal-code" inputmode="numeric"></label>
+      <label>Gmail<input id="f-mail" type="email" autocomplete="email" inputmode="email"></label>
+      <p id="form-error" class="error" hidden>Completá todos los campos (con un Gmail válido) para continuar.</p>
+      <div class="modal-actions">
+        <button type="button" id="modal-cancel">Cancelar</button>
+        <button type="button" id="step1-next" class="btn-primary">Continuar al pago</button>
+      </div>
+    </div>
+    <div id="step-pago" hidden>
+      <h3>2. Pago</h3>
+      <p>Total a pagar: <strong id="pay-total"></strong></p>
+      <p class="warn">⚠️ Importante: después de pagar, sacá captura del comprobante. La vas a tener que adjuntar en el chat de WhatsApp.</p>
+      <p>Pagá con Mercado Pago (ingresá el monto del total):</p>
+      <a id="mp-link" class="btn btn-primary" href="#" target="_blank" rel="noopener">Ir a pagar con Mercado Pago</a>
+      <p class="alias">También podés transferir al alias: <strong id="mp-alias"></strong></p>
+      <label class="upload">Subí la captura del comprobante
+        <input id="comprobante" type="file" accept="image/*">
+      </label>
+      <img id="comp-preview" alt="Comprobante de pago" hidden>
+      <div class="modal-actions">
+        <button type="button" id="step2-back">Volver</button>
+        <button type="button" id="step2-wa" class="btn-primary" disabled>Enviar pedido y comprobante por WhatsApp</button>
+      </div>
     </div>
   </div>
 </div>
@@ -262,25 +285,95 @@ renderCart();
 paintThemeBtn();
 startFalling();
 
+const MP_LINK = "https://mpago.la/26szxRv";
+const MP_ALIAS = "Meli.jose063";
+document.getElementById("mp-alias").textContent = MP_ALIAS;
+
 const modal = document.getElementById("modal");
-const fields = ["f-prov", "f-loc", "f-dir", "f-cp"].map(id => document.getElementById(id));
+const stepEntrega = document.getElementById("step-entrega");
+const stepPago = document.getElementById("step-pago");
+const fields = ["f-prov", "f-loc", "f-dir", "f-cp", "f-mail"].map(id => document.getElementById(id));
 const formError = document.getElementById("form-error");
+let entrega = null;
+
+function showStep(n) {
+  stepEntrega.hidden = n !== 1;
+  stepPago.hidden = n !== 2;
+}
+function closeModal() { modal.hidden = true; }
+
 document.getElementById("send-btn").addEventListener("click", () => {
   if (cart.length === 0) { alert("Tu carrito está vacío."); return; }
   formError.hidden = true;
+  showStep(1);
   modal.hidden = false;
   fields[0].focus();
 });
-document.getElementById("modal-cancel").addEventListener("click", () => { modal.hidden = true; });
-modal.addEventListener("click", e => { if (e.target === modal) modal.hidden = true; });
-document.getElementById("modal-go").addEventListener("click", () => {
-  const [prov, loc, dir, cp] = fields.map(f => f.value.trim());
-  if (!prov || !loc || !dir || !cp) { formError.hidden = false; return; }
+document.getElementById("modal-cancel").addEventListener("click", closeModal);
+modal.addEventListener("click", e => { if (e.target === modal) closeModal(); });
+
+document.getElementById("step1-next").addEventListener("click", () => {
+  const [prov, loc, dir, cp, mail] = fields.map(f => f.value.trim());
+  if (!prov || !loc || !dir || !cp || !/^\S+@\S+\.\S+$/.test(mail)) { formError.hidden = false; return; }
+  entrega = { prov, loc, dir, cp, mail };
+  const total = cart.reduce((a, i) => a + i.price * i.qty, 0);
+  document.getElementById("pay-total").textContent = fmt(total);
+  document.getElementById("mp-link").setAttribute("href", MP_LINK);
+  showStep(2);
+});
+document.getElementById("step2-back").addEventListener("click", () => showStep(1));
+
+const compInput = document.getElementById("comprobante");
+const compPreview = document.getElementById("comp-preview");
+const stepWa = document.getElementById("step2-wa");
+let comprobante = null;
+
+compInput.addEventListener("change", () => {
+  comprobante = compInput.files[0] || null;
+  if (comprobante) {
+    compPreview.src = URL.createObjectURL(comprobante);
+    compPreview.hidden = false;
+    stepWa.disabled = false;
+  } else {
+    compPreview.hidden = true;
+    stepWa.disabled = true;
+  }
+});
+
+function buildMsg() {
   const total = cart.reduce((a, i) => a + i.price * i.qty, 0);
   const lines = cart.map(i => `- ${i.name} (Talle ${i.size}) x${i.qty}: ${fmt(i.price * i.qty)}`);
-  const msg = `Hola! Quiero hacer este pedido en Alma Showroom:\n${lines.join("\n")}\nTotal: ${fmt(total)}\n\nDatos de envío:\nProvincia: ${prov}\nLocalidad: ${loc}\nDirección: ${dir}\nCódigo postal: ${cp}`;
+  return `Hola! Quiero hacer este pedido en Alma Showroom:\n${lines.join("\n")}\nTotal: ${fmt(total)}\n\nDatos de envío:\nProvincia: ${entrega.prov}\nLocalidad: ${entrega.loc}\nDirección: ${entrega.dir}\nCódigo postal: ${entrega.cp}\nGmail: ${entrega.mail}\n\nTe envío el comprobante de pago.`;
+}
+
+function finishOrder() {
+  cart = []; saveCart(); renderCart();
+  compInput.value = ""; comprobante = null;
+  compPreview.hidden = true; stepWa.disabled = true;
+  closeModal();
+}
+
+stepWa.addEventListener("click", async () => {
+  if (!comprobante) return;
+  const msg = buildMsg();
+  // En celulares: abre el menú para compartir con la imagen adjunta y WhatsApp como destino
+  if (navigator.canShare && navigator.canShare({ files: [comprobante] })) {
+    try {
+      await navigator.share({ files: [comprobante], text: msg });
+      finishOrder();
+      return;
+    } catch (e) {
+      if (e.name === "AbortError") return;
+    }
+  }
+  // Alternativa (computadora u otros navegadores): descarga la imagen y abre WhatsApp con el texto
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(comprobante);
+  a.download = "comprobante.jpg";
+  a.click();
+  alert("Se abre WhatsApp con tu pedido. Adjuntá la imagen descargada (comprobante.jpg) en ese chat.");
   window.open(`https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(msg)}`, "_blank", "noopener");
-  modal.hidden = true;
+  finishOrder();
 });
 </script>
 </body>
